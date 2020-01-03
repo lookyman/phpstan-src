@@ -9,8 +9,10 @@ use Nette\Schema\Context as SchemaContext;
 use Nette\Schema\Processor;
 use Nette\Utils\Strings;
 use Nette\Utils\Validators;
+use PHPStan\Cache\Cache;
 use PHPStan\Command\Symfony\SymfonyOutput;
 use PHPStan\Command\Symfony\SymfonyStyle;
+use PHPStan\Dependency\DependencyDumper;
 use PHPStan\DependencyInjection\ContainerFactory;
 use PHPStan\DependencyInjection\LoaderFactory;
 use PHPStan\DependencyInjection\NeonAdapter;
@@ -39,7 +41,8 @@ class CommandHelper
 		array $composerAutoloaderProjectPaths,
 		?string $projectConfigFile,
 		?string $level,
-		bool $allowXdebug
+		bool $allowXdebug,
+		bool $changed = false
 	): InceptionResult
 	{
 		if (!$allowXdebug) {
@@ -330,8 +333,46 @@ class CommandHelper
 			throw new \PHPStan\Command\InceptionNotSuccessfulException($e->getMessage(), 0, $e);
 		}
 
+		$files = $fileFinderResult->getFiles();
+		if ($changed) {
+			/** @var \PHPStan\Cache\Cache $cache */
+			$cache = $container->getByType(Cache::class);
+
+			$changedFiles = [];
+			foreach ($files as $file) {
+				$timestamp = filemtime($file);
+				if ($timestamp === false) {
+					$changedFiles[] = $file;
+					continue;
+				}
+				/** @var int|null $cachedTimestamp */
+				$cachedTimestamp = $cache->load(sprintf('filemtime-%s', $file));
+				if ($cachedTimestamp !== null && $cachedTimestamp >= $timestamp) {
+					continue;
+				}
+				$changedFiles[] = $file;
+			}
+
+			$realFiles = [];
+
+			/** @var \PHPStan\Dependency\DependencyDumper $dependencyDumper */
+			$dependencyDumper = $container->getByType(DependencyDumper::class);
+			$dependencies = $dependencyDumper->dumpDependencies($changedFiles, null, null, null, false);
+			foreach ($changedFiles as $changedFile) {
+				$realFiles[] = $changedFile;
+				foreach ($dependencies as $dependency => $dependants) {
+					if (!in_array($changedFile, $dependants, true) || !in_array($dependency, $files, true)) {
+						continue;
+					}
+					$realFiles[] = $dependency;
+				}
+			}
+
+			$files = $realFiles;
+		}
+
 		return new InceptionResult(
-			$fileFinderResult->getFiles(),
+			$files,
 			$fileFinderResult->isOnlyFiles(),
 			$stdOutput,
 			$errorOutput,

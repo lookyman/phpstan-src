@@ -5,6 +5,7 @@ namespace PHPStan\Command;
 use PhpParser\Node;
 use PHPStan\Analyser\Analyser;
 use PHPStan\Analyser\Scope;
+use PHPStan\Cache\Cache;
 use PHPStan\Command\ErrorFormatter\ErrorFormatter;
 use PHPStan\Type\MixedType;
 
@@ -17,13 +18,18 @@ class AnalyseApplication
 	/** @var string */
 	private $memoryLimitFile;
 
+	/** @var \PHPStan\Cache\Cache */
+	private $cache;
+
 	public function __construct(
 		Analyser $analyser,
-		string $memoryLimitFile
+		string $memoryLimitFile,
+		Cache $cache
 	)
 	{
 		$this->analyser = $analyser;
 		$this->memoryLimitFile = $memoryLimitFile;
+		$this->cache = $cache;
 	}
 
 	/**
@@ -45,7 +51,8 @@ class AnalyseApplication
 		ErrorFormatter $errorFormatter,
 		bool $defaultLevelUsed,
 		bool $debug,
-		?string $projectConfigFile
+		?string $projectConfigFile,
+		bool $changed = false
 	): int
 	{
 		$this->updateMemoryLimitFile();
@@ -67,11 +74,24 @@ class AnalyseApplication
 			@unlink($this->memoryLimitFile);
 		});
 
+		if ($changed) {
+			$timestampCacher = function (string $file): void {
+				$timestamp = filemtime($file);
+				if ($timestamp === false) {
+					return;
+				}
+				$this->cache->save(sprintf('filemtime-%s', $file), $timestamp);
+			};
+		} else {
+			$timestampCacher = static function (string $file): void {
+			};
+		}
+
 		if (!$debug) {
 			$progressStarted = false;
 			$fileOrder = 0;
 			$preFileCallback = null;
-			$postFileCallback = function () use ($errorOutput, &$progressStarted, $files, &$fileOrder): void {
+			$postFileCallback = function (string $file) use ($errorOutput, &$progressStarted, $files, &$fileOrder, $timestampCacher): void {
 				if (!$progressStarted) {
 					$errorOutput->getStyle()->progressStart(count($files));
 					$progressStarted = true;
@@ -81,12 +101,14 @@ class AnalyseApplication
 					$this->updateMemoryLimitFile();
 				}
 				$fileOrder++;
+
+				$timestampCacher($file);
 			};
 		} else {
 			$preFileCallback = static function (string $file) use ($stdOutput): void {
 				$stdOutput->writeLineFormatted($file);
 			};
-			$postFileCallback = null;
+			$postFileCallback = $timestampCacher;
 		}
 
 		$hasInferrablePropertyTypesFromConstructor = false;

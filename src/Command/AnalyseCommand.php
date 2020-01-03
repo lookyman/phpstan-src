@@ -46,6 +46,7 @@ class AnalyseCommand extends \Symfony\Component\Console\Command\Command
 				new InputOption('error-format', null, InputOption::VALUE_REQUIRED, 'Format in which to print the result of the analysis', 'table'),
 				new InputOption('memory-limit', null, InputOption::VALUE_REQUIRED, 'Memory limit for analysis'),
 				new InputOption('xdebug', null, InputOption::VALUE_NONE, 'Allow running with XDebug for debugging purposes'),
+				new InputOption('changed', null, InputOption::VALUE_NONE, 'Analyse only changed files and their dependents'),
 			]);
 	}
 
@@ -78,6 +79,7 @@ class AnalyseCommand extends \Symfony\Component\Console\Command\Command
 		$level = $input->getOption(self::OPTION_LEVEL);
 		$pathsFile = $input->getOption('paths-file');
 		$allowXdebug = $input->getOption('xdebug');
+		$changed = $input->getOption('changed');
 
 		if (
 			!is_array($paths)
@@ -87,6 +89,7 @@ class AnalyseCommand extends \Symfony\Component\Console\Command\Command
 			|| (!is_string($level) && $level !== null)
 			|| (!is_string($pathsFile) && $pathsFile !== null)
 			|| (!is_bool($allowXdebug))
+			|| (!is_bool($changed))
 		) {
 			throw new \PHPStan\ShouldNotHappenException();
 		}
@@ -102,7 +105,8 @@ class AnalyseCommand extends \Symfony\Component\Console\Command\Command
 				$this->composerAutoloaderProjectPaths,
 				$configuration,
 				$level,
-				$allowXdebug
+				$allowXdebug,
+				$changed
 			);
 		} catch (\PHPStan\Command\InceptionNotSuccessfulException $e) {
 			return 1;
@@ -148,7 +152,8 @@ class AnalyseCommand extends \Symfony\Component\Console\Command\Command
 				$errorFormatter,
 				$inceptionResult->isDefaultLevelUsed(),
 				$debug,
-				$inceptionResult->getProjectConfigFile()
+				$inceptionResult->getProjectConfigFile(),
+				$changed
 			)
 		);
 	}

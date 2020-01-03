@@ -57,9 +57,10 @@ class DependencyDumper
 	 */
 	public function dumpDependencies(
 		array $files,
-		callable $countCallback,
-		callable $progressCallback,
-		?array $analysedPaths
+		?callable $countCallback,
+		?callable $progressCallback,
+		?array $analysedPaths,
+		bool $onlyAnalysedFiles = true
 	): array
 	{
 		$analysedFiles = $files;
@@ -70,7 +71,9 @@ class DependencyDumper
 		$analysedFiles = array_fill_keys($analysedFiles, true);
 
 		$dependencies = [];
-		$countCallback(count($files));
+		if ($countCallback !== null) {
+			$countCallback(count($files));
+		}
 		foreach ($files as $file) {
 			try {
 				$parserNodes = $this->parser->parseFile($file);
@@ -83,10 +86,10 @@ class DependencyDumper
 				$this->nodeScopeResolver->processNodes(
 					$parserNodes,
 					$this->scopeFactory->create(ScopeContext::create($file)),
-					function (\PhpParser\Node $node, Scope $scope) use ($analysedFiles, &$fileDependencies): void {
+					function (\PhpParser\Node $node, Scope $scope) use ($analysedFiles, &$fileDependencies, $onlyAnalysedFiles): void {
 						$fileDependencies = array_merge(
 							$fileDependencies,
-							$this->resolveDependencies($node, $scope, $analysedFiles)
+							$this->resolveDependencies($node, $scope, $analysedFiles, $onlyAnalysedFiles)
 						);
 					}
 				);
@@ -99,6 +102,9 @@ class DependencyDumper
 				$dependencies[$relativeDependencyFile][] = $file;
 			}
 
+			if ($progressCallback === null) {
+				continue;
+			}
 			$progressCallback();
 		}
 
@@ -114,7 +120,8 @@ class DependencyDumper
 	private function resolveDependencies(
 		\PhpParser\Node $node,
 		Scope $scope,
-		array $analysedFiles
+		array $analysedFiles,
+		bool $onlyAnalysedFiles
 	): array
 	{
 		$dependencies = [];
@@ -130,7 +137,7 @@ class DependencyDumper
 				continue;
 			}
 
-			if (!isset($analysedFiles[$dependencyFile])) {
+			if ($onlyAnalysedFiles && !isset($analysedFiles[$dependencyFile])) {
 				continue;
 			}
 
